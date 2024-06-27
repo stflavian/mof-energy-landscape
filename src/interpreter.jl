@@ -10,6 +10,7 @@ struct AtomProperties
     epsilon::Real
     sigma::Real
     charge::Real
+    mass::Real
 end
 
 """
@@ -96,8 +97,9 @@ function read_input_file(path::String)
             epsilon = parse(Float64, line[3])
             sigma = parse(Float64, line[4])
             charge = parse(Float64, line[5])
-            
-            atom_prop[species] = AtomProperties(epsilon, sigma, charge)
+            mass = parse(Float64, line[6])
+
+            atom_prop[species] = AtomProperties(epsilon, sigma, charge, mass)
         
         elseif line[1] == "FRAMEPROP"
             
@@ -158,8 +160,7 @@ function compute_potential(atom_prop::Dict{SubString{String}, AtomProperties},
     beta = frame_prop.beta * pi / 180
     gamma = frame_prop.gamma * pi / 180
 
-    alphastar = acos((cos(beta) * cos(gamma) - cos(alpha)) / sin(beta) / sin(gamma))
-        
+    alphastar = acos((cos(beta) * cos(gamma) - cos(alpha)) / sin(beta) / sin(gamma)) 
     A = [a  b * cos(gamma)  c * cos(beta);
         0  b * sin(gamma)  c * -1 * sin(beta) * cos(alphastar);
         0  0  c * sin(beta) * sin(alphastar)]
@@ -210,17 +211,21 @@ function compute_potential(atom_prop::Dict{SubString{String}, AtomProperties},
 
                 r = sqrt((pb_atom_x - x)^2 + (pb_atom_y - y)^2 + (pb_atom_z - z)^2)
             
-                if  sig < r < 14
+                if  0.5 * sig < r < 5 * sig
                     potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
                     potential[i, j, k, 4] += coloumb_energy(q, r)
-                elseif r < sig
+                elseif r < 0.5 * sig
                     potential[i, j, k, 4] = 0
                     @goto finish_potenial_calculation
-                elseif r > 14
+                elseif r > 5 * sig
                     continue
                 end
 
             end
+        end
+
+        if potential[i, j, k, 4] > 0
+            potential[i, j, k, 4] = 0
         end
         
         @label finish_potenial_calculation
@@ -228,17 +233,50 @@ function compute_potential(atom_prop::Dict{SubString{String}, AtomProperties},
         # Conversion from J to kJ/mol
         potential[i, j, k, 4] *= NA * 1e-3
     end
+   
+    mkdir("Output")
+
+    x = zeros(size^3)
+    y = zeros(size^3)
+    z = zeros(size^3)
+    pot = zeros(size^3)
+    for i in 1:1:size, j in 1:1:size, k in 1:1:size
+        index = i + (j-1) * size + (k-1) * size^2
+        x[index] = potential[i, j, k, 1]
+        y[index] = potential[i, j, k, 2]
+        z[index] = potential[i, j, k, 3]
+        pot[index] = potential[i, j, k, 4]
+    end
+
+    p = scatter(x, y, z, marker_z=pot, aspect_ratio=:equal, markersize=2, camera=(0, -90))
+    xlabel!(p, "X [\$\\AA\$]")
+    ylabel!(p, "Y [\$\\AA\$]")
+    zlabel!(p, "Z [\$\\AA\$]")
+    
+    savefig(p, "Output/potential_landscape.png")
 
     return potential
 end
 
 
-function compute_characteristic(potential::Array{Float64, 4}, size::Integer, 
-    frame_prop::FrameworkProperties)
+"""
+asda
+"""
+function compute_characteristic(atom_prop::Dict{SubString{String}, AtomProperties}, 
+    frame_prop::FrameworkProperties, framework::Vector{Atom}, potential::Array{Float64, 4}, 
+    size::Integer) 
 
-    maximum_potential = maximum(potential)
-    potential_range = range(start=1e-7, stop=maximum_potential, length=30)
-    
+    npoints = 30
+
+    # Compute unitcell mass in g
+    unitcell_mass = 0.0
+    for atom in framework
+        unitcell_mass += atom_prop[atom.species].mass
+    end
+
+    unitcell_mass = unitcell_mass * MC * 1e3
+   
+    # Compute unit cell volume
     a = frame_prop.a
     b = frame_prop.b
     c = frame_prop.c
@@ -247,25 +285,42 @@ function compute_characteristic(potential::Array{Float64, 4}, size::Integer,
     beta = frame_prop.beta * pi / 180
     gamma = frame_prop.gamma * pi / 180
 
-    cell_volume = a * b * c * sqrt(sin(alpha)^2 + sin(beta)^2 + sin(gamma)^2 + 
+    unitcell_volume = a * b * c * sqrt(sin(alpha)^2 + sin(beta)^2 + sin(gamma)^2 + 
             2 * cos(alpha) * cos(beta) * cos(gamma) - 2)
-
-    sample_volume = cell_volume / size^3
     
-    measured_volumes = zeros(30)
+    # Compute the volume of a sample point in ml
+    sample_volume = unitcell_volume * 1e-24 / size^3
+    
+    minimum_potential = minimum(potential)
+    potential_range = range(start=minimum_potential, stop=-0.000001, length=npoints)
+    
+    output_file = open("Output/characteristic.dat", "w+")
+    write(output_file, "# Potential [kJ/mol] \t Volume [ml/g] \n")
+
+    measured_potential = zeros(npoints)
+    measured_volumes = zeros(npoints)
     for (index, ads_potential) in enumerate(potential_range)
         counter = 0
         for i in 1:1:size, j in 1:1:size, k in 1:1:size
-            if potential[i, j, k, 4] >= ads_potential
+            if potential[i, j, k, 4] <= ads_potential
                 counter += 1
             end
         end
-        volume = counter * sample_volume
+        
+        # Store the volume in ml/g
+        volume = counter * sample_volume / unitcell_mass
         measured_volumes[index] = volume
+        
+        # Store the positive value of potential in kJ/mol
+        measured_potential[index] = -ads_potential
+        
+        write(output_file, "$(-ads_potential) \t $volume \n") 
     end
-    
-    characteristic_plot = plot(potential_range, measured_volumes)
-    xlabel!(characteristic_plot, "Adsorption potential [kJ/mol]")
-    ylabel!(characteristic_plot, "Filling volume [\$\\AA^{3}\$]")
-    savefig(characteristic_plot, "characteristic.png") 
+
+    close(output_file)
+
+    characteristic_plot = plot(measured_potential, measured_volumes)
+    xlabel!(characteristic_plot, "Potential [kJ/mol]")
+    ylabel!(characteristic_plot, "Volume [ml/g]")
+    savefig(characteristic_plot, "Output/characteristic.png") 
 end
