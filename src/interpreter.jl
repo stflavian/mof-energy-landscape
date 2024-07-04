@@ -1,5 +1,6 @@
 using Plots
 using ProgressBars
+using LinearAlgebra
 
 include("constants.jl")
 
@@ -296,6 +297,30 @@ function remove_probe_centermass(atom_properties::Dict{SubString{String}, AtomPr
 end
 
 
+function rotate_probe(probe::Probe, angle::Real, i::Real, j::Real, k::Real)
+    
+    rotated_probe = deepcopy(probe.atoms)
+    rotation_vector = sin(angle/2) / sqrt(i^2 + j^2 + k^2) * [i; j; k]
+
+    q0 = cos(angle/2)
+    qlen2 = rotation_vector[1]^2 + rotation_vector[2]^2 + rotation_vector[3]^2
+    
+    for (index, atom) in enumerate(probe.atoms)
+        species = atom.species
+        position_vector = [atom.x; atom.y; atom.z]
+       
+        rotated_position_vector = (q0^2 - qlen2) * position_vector + 
+        2 * dot(rotation_vector, position_vector) * rotation_vector + 
+        2 * q0 * cross(rotation_vector, position_vector)
+        
+        x, y, z = rotated_position_vector
+        rotated_probe[index] = Atom(species, x, y, z)
+    end
+    
+    return Probe(rotated_probe)
+end
+
+
 """
 TODO
 """
@@ -411,46 +436,61 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
         potential[i, j, k, 1] = x
         potential[i, j, k, 2] = y
         potential[i, j, k, 3] = z
-    
-        for framework_atom in framework.atoms, probe_atom in probe.atoms
-            
-            sig1 = atom_prop[probe_atom.species].sigma
-            eps1 = atom_prop[probe_atom.species].epsilon
-            q1 = atom_prop[probe_atom.species].charge
+
+        number_of_atoms_in_probe = length(probe.atoms)
         
-            sig2 = atom_prop[framework_atom.species].sigma
-            eps2 = atom_prop[framework_atom.species].epsilon
-            q2 = atom_prop[framework_atom.species].charge
-            
-            # Lorentz-Berthelot mixing rules and charge product
-            sig = (sig1 + sig2) / 2
-            eps = sqrt(eps1 * eps2)
-            q = q1 * q2 
-            
-            for offset in pbc_offsets
+        if number_of_atoms_in_probe == 1
+            rotation_trials = 1
+        else
+            rotation_trials = 10
+        end
 
-                # Compute the position of the atomic image using PBC
-                f_atom_x = framework_atom.x + offset[1]
-                f_atom_y = framework_atom.y + offset[2]
-                f_atom_z = framework_atom.z + offset[3]
+        for _ in 1:1:rotation_trials
+
+            angle = rand() * 2 * pi
+            axis_i = 1 - 2 * rand()
+            axis_j = 1 - 2 * rand()
+            axis_k = 1 - 2 * rand()
+            rotated_probe = rotate_probe(probe, angle, axis_i, axis_j, axis_k)
+
+            for framework_atom in framework.atoms, probe_atom in rotated_probe.atoms
+            
+                sig1 = atom_prop[probe_atom.species].sigma
+                eps1 = atom_prop[probe_atom.species].epsilon
+                q1 = atom_prop[probe_atom.species].charge
+        
+                sig2 = atom_prop[framework_atom.species].sigma
+                eps2 = atom_prop[framework_atom.species].epsilon
+                q2 = atom_prop[framework_atom.species].charge
+            
+                # Lorentz-Berthelot mixing rules and charge product
+                sig = (sig1 + sig2) / 2
+                eps = sqrt(eps1 * eps2)
+                q = q1 * q2 
+            
+                for offset in pbc_offsets
+
+                    f_atom_x = framework_atom.x + offset[1]
+                    f_atom_y = framework_atom.y + offset[2]
+                    f_atom_z = framework_atom.z + offset[3]
                 
-                # Compute the position of the atomic image using PBC
-                p_atom_x = probe_atom.x + x
-                p_atom_y = probe_atom.y + y
-                p_atom_z = probe_atom.z + z
+                    p_atom_x = probe_atom.x + x
+                    p_atom_y = probe_atom.y + y
+                    p_atom_z = probe_atom.z + z
 
-                r = sqrt((p_atom_x - f_atom_x)^2 + (p_atom_y - f_atom_y)^2 + (p_atom_z - f_atom_z)^2)
+                    r = sqrt((p_atom_x - f_atom_x)^2 + (p_atom_y - f_atom_y)^2 + 
+                    (p_atom_z - f_atom_z)^2)
             
-                if  0.5 * sig < r < cutoff
-                    potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
-                    potential[i, j, k, 4] += coloumb_energy(q, r)
-                elseif r < 0.5 * sig
-                    potential[i, j, k, 4] = 0
-                    @goto finish_potenial_calculation
-                elseif r > cutoff
-                    continue
+                    if  0.5 * sig < r < cutoff
+                        potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
+                        potential[i, j, k, 4] += coloumb_energy(q, r)
+                    elseif r < 0.5 * sig
+                        potential[i, j, k, 4] = 0
+                        @goto finish_potenial_calculation
+                    elseif r > cutoff
+                        continue
+                    end
                 end
-
             end
         end
 
@@ -461,7 +501,7 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
         @label finish_potenial_calculation
 
         # Conversion from J to kJ/mol
-        potential[i, j, k, 4] *= NA * 1e-3
+        potential[i, j, k, 4] *= NA * 1e-3 / rotation_trials
     end
    
     if save == "yes"
