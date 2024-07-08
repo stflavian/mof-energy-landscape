@@ -6,7 +6,7 @@ include("constants.jl")
 
 
 """
-Structure for storing atomic Lennard-Jones parameters and charge.
+Structure for storing the properties of an atomic species.
 """
 struct AtomProperties
     epsilon::Real
@@ -17,7 +17,7 @@ end
 
 
 """
-Structure for storing the Cartesian coordinates of the framework's atoms. 
+Structure for storing the species and Cartesian coordinates of atoms. 
 """
 struct Atom
     species::String
@@ -28,20 +28,7 @@ end
 
 
 """
-Structure for storing the framework's lattice parameters.
-"""
-struct FrameworkProperties
-    a::Real
-    b::Real
-    c::Real
-    alpha::Real
-    beta::Real
-    gamma::Real
-end
-
-
-"""
-TODO
+Structure for storing the framework unit cell parameters and position of atoms.
 """
 struct Framework
     a::Real
@@ -55,7 +42,7 @@ end
 
 
 """
-TODO
+Structure for storing the position of atoms inside the probe.
 """
 struct Probe
     atoms::Vector{Atom}
@@ -63,7 +50,14 @@ end
 
 
 """
-TODO
+    read_probe_file(path::SubString{String})
+
+Parse the probe file and return a vector containing the constituting atoms. 
+
+The probe file should be in .xyz format, with the comment line being ignored.
+
+# Arguments
+- `path::SubString{String}`: the path to the probe file.
 """
 function read_probe_file(path::SubString{String})
     
@@ -96,7 +90,17 @@ end
 
 
 """
-TODO
+    read_framework_file(path::SubString{String})
+
+Parse the framework file and return a data structure containing the constituting atoms 
+and the unit cell parameters. 
+
+The framework file should be in .xyz format, with the comment line containing the 
+lattice vectors a, b, and c and the lattice angles alpha, beta, and gamma, in this 
+specific order.
+
+# Arguments
+- `path::SubString{String}`: the path to the framework file.
 """
 function read_framework_file(path::SubString{String})
     
@@ -137,7 +141,17 @@ end
 
 
 """
-TODO
+    read_properties_file(path::SubString{String})
+
+Parse the properties file and return a dictionary containing the atomic species as keys
+and the AtomProperties data structure as value. 
+
+The file should contain separate lines for each atomic species, each having the name 
+of the atom, followed by the epsilon value (K), sigma value (angstrom), charge (e-), 
+and mass (m.u.), in this specific order. 
+
+# Arguments
+- `path::SubString{String}`: the path to the properties file.
 """
 function read_properties_file(path::SubString{String})
     
@@ -165,9 +179,17 @@ end
 
 
 """
-TODO
+    read_input_file(path::SubString{String})
+
+Parse the input file and return a dictionary containing the simulation settings. 
+
+The file should contain separate lines for each keyword, with the keyword and the 
+argument separated by an arbitrary amount of spaces or tabs.
+
+# Arguments
+- `path::SubString{String}`: the path to the input file.
 """
-function read_input_file_beta(path::String)
+function read_input_file(path::String)
     keywords = Dict(
         "FRAMEWORK" => Nothing, 
         "PROPERTIES" => Nothing,
@@ -201,11 +223,13 @@ end
 """
     lennard_jones_energy(sigma::Real, epsilon::Real, distance::Real)
 
-Compute the 6-12 Lennard-Jones energy between two particles.
+Compute the 6-12 Lennard-Jones energy (J) between two particles, using the sigma value
+(angstrom), epsilon value (K), and distance (angstrom).
 
 # Arguments
-- `sigma::Real`: the size parameter, usually the sum of the particle's radii.
-- `epsilon::Real`: the depth of the potential well.
+- `sigma::Real`: the size parameter, usually the sum of the particles' radii.
+- `epsilon::Real`: the depth of the potential well, usually the geometric mean of the
+particles' epsilon values.
 - `distance::Real`: the distance between the center of masses of the two particles.
 """
 function lennard_jones_energy(sigma::Real, epsilon::Real, distance::Real)
@@ -217,7 +241,8 @@ end
 """
     coloumb_energy(charge::Real, distance::Real)
 
-Compute the electrostatic energy between two particles.
+Compute the electrostatic energy (J) between two particles using the product of the
+charges (e-^2) and distance (angstrom).
 
 # Arguments
 - `charge::Real`: the product of the charges of the two particles.
@@ -229,7 +254,16 @@ end
 
 
 """
-TODO
+    compute_probe_charge(atom_properties::Dict{SubString{String}, AtomProperties},
+    probe::Probe)
+
+Compute the total charge (e-) of the probe by taking into account the contribution of 
+each constituting atom.
+
+# Arguments
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `probe::Probe`: the vector containing the constituting atoms of the probe.
 """
 function compute_probe_charge(atom_properties::Dict{SubString{String}, AtomProperties},
     probe::Probe)
@@ -245,7 +279,16 @@ end
 
 
 """
-TODO
+    compute_probe_mass(atom_properties::Dict{SubString{String}, AtomProperties},
+    probe::Probe)
+
+Compute the total mass (kg) of the probe by taking into account the contribution of 
+each constituting atom.
+
+# Arguments
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `probe::Probe`: the vector containing the constituting atoms of the probe.
 """
 function compute_probe_mass(atom_properties::Dict{SubString{String}, AtomProperties},
     probe::Probe)
@@ -261,7 +304,19 @@ end
 
 
 """
-TODO
+    remove_probe_centermass(atom_properties::Dict{SubString{String}, AtomProperties},
+    probe::Probe)
+
+Compute the position of the center of mass and subtract the value from the position
+of each atom. 
+
+Return a new Probe structure with the center of mass in the origin, together with the 
+old position of the center of mass.
+
+# Arguments
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `probe::Probe`: the vector containing the constituting atoms of the probe.
 """
 function remove_probe_centermass(atom_properties::Dict{SubString{String}, AtomProperties},
     probe::Probe)
@@ -297,6 +352,24 @@ function remove_probe_centermass(atom_properties::Dict{SubString{String}, AtomPr
 end
 
 
+"""
+    rotate_probe(probe::Probe, angle::Real, i::Real, j::Real, k::Real)
+
+Rotate the probe molecule by an arbitrary angle around an arbitrary axis. 
+
+This method is based on quaternion rotation method, where a rotation angle and a 
+rotation axis are selected, and then a rotation operator is applied on the each 
+constituting atom to compute the new position after the rotation. The rotation axis 
+passes through the origin, so the particle needs to have its center of mass in the 
+origin.
+
+# Arguments
+- `probe::Probe`: the vector containing the constituting atoms of the probe.
+- `angle::Real`: the angle of rotation for the molecule.
+- `i::Real`: the i (x) component of the rotation axis.
+- `j::Real`: the j (y) component of the rotation axis.
+- `k::Real`: the k (z) component of the rotation axis.
+"""
 function rotate_probe(probe::Probe, angle::Real, i::Real, j::Real, k::Real)
     
     rotated_probe = deepcopy(probe.atoms)
@@ -322,7 +395,17 @@ end
 
 
 """
-TODO
+    compute_framework_charge(atom_properties::Dict{SubString{String}, AtomProperties},
+    framework::Framework)
+
+Compute the total charge (e-) of the framework unit cell by taking into account the 
+contribution of each constituting atom.
+
+# Arguments
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `framework::Framework`: the data structure containing the framework unit cell 
+parameters and the constituting atoms.
 """
 function compute_framework_charge(atom_properties::Dict{SubString{String}, AtomProperties},
     framework::Framework)
@@ -338,7 +421,17 @@ end
 
 
 """
-TODO
+    compute_framework_mass(atom_properties::Dict{SubString{String}, AtomProperties},
+    framework::Framework)
+
+Compute the total mass (kg) of the framework unit cell by taking into account the 
+contribution of each constituting atom.
+
+# Arguments
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `framework::Framework`: the data structure containing the framework unit cell 
+parameters and the constituting atoms.
 """
 function compute_framework_mass(atom_properties::Dict{SubString{String}, AtomProperties},
     framework::Framework)
@@ -354,7 +447,15 @@ end
 
 
 """
-TODO
+    compute_framework_volume(atom_properties::Dict{SubString{String}, AtomProperties},
+    framework::Framework)
+
+Compute the total volume (angstrom^3) of the framework unit cell from the unit cell
+parameters.
+
+# Arguments
+- `framework::Framework`: the data structure containing the framework unit cell 
+parameters and the constituting atoms.
 """
 function compute_framework_volume(framework::Framework)
     
@@ -374,7 +475,13 @@ end
 
 
 """
-TODO
+    compute_framework_density(framework_mass::Real, framework_volume::Real)
+
+Compute the density (kg/m3) of the framework.
+
+# Arguments
+- `framework_mass::Real`: the total mass of the atoms inside the unit cell.
+- `framework_volume::Real`: the total volume of the unit cell.
 """
 function compute_framework_density(framework_mass::Real, framework_volume::Real)
     return framework_mass * 1e30 / framework_volume
@@ -382,21 +489,40 @@ end
 
 
 """
-    compute_potential(atom_prop::Dict{SubString{String}, AtomProperties}, 
-    frame_prop::FrameworkProperties, framework::Vector{Atom}, probe::SubString{String}, 
-    size::Integer)
+    compute_potential_landscape(atom_properties::Dict{SubString{String}, AtomProperties}, 
+    framework::Framework, probe::Probe, sizea::Integer, sizeb::Integer, sizec::Integer,
+    cutoff::Real, save::SubString{String})
 
-Compute the potential 
+Compute the potential landscape inside the framework for the given probe molecule. 
+
+The unit cell is divided in `sizea` x `sizeb` x `sizec` smaller boxes, at the center of
+which the probe is inserted. The Lennard-Jones and Coloumb interactions between the 
+probe and the atoms in the framework are then computed and added to the potential value
+in that position. If the distance between the probe and one of the atoms in the 
+framework is closer than `0.5 sigma`, the potential value is set to 1. If the potential
+value in a box is positive, it is set to 0. If the molecule contains more than one atom
+this procedure is repeated for different rotations of the molecule, and the results
+are averaged. When taking into account the probe-framework interactions, periodic
+boundary conditions are used. 
+
+The results are stored in a 4-dimensional array, where the first 3 entries represent 
+the x, y, ans z coordinates, and the last entry is the value of the potential
 
 # Arguments
-- `atom_prop::Dict{SubString{String}, AtomProperties}`: 
-- `frame_prop::FrameworkProperties`:
-- `framework::Vector{Atom}`:
-- `probe::SubString{String}`:
-- `size::Integer`: 
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `framework::Framework`: the data structure containing the framework unit cell 
+parameters and the constituting atoms.
+- `probe::Probe`: the vector containing the constituting atoms of the probe.
+- `sizea::Integer`: the number of units in which the a lattice vector is divided. 
+- `sizeb::Integer`: the number of units in which the b lattice vector is divided.
+- `sizec::Integer`: the number of units in which the c lattice vector is divided.
+- `cutoff::Real`: the potential cutoff used for the energy calculations.
+- `save::SubString{String}`: "yes" if the potential in each point should be plotted and
+saved.
 """
-function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProperties}, 
-    framework::Framework, probe::Probe, sizex::Integer, sizey::Integer, sizez::Integer,
+function compute_potential_landscape(atom_properties::Dict{SubString{String}, AtomProperties}, 
+    framework::Framework, probe::Probe, sizea::Integer, sizeb::Integer, sizec::Integer,
     cutoff::Real, save::SubString{String})
     
     # Compute the transformation matrix for fractional to Cartesian coordinates
@@ -421,10 +547,10 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
     end
     
     # Initialize arrays and assign parameters for probe
-    sx = range(start=0, stop=1, length=sizex)
-    sy = range(start=0, stop=1, length=sizey)
-    sz = range(start=0, stop=1, length=sizez)
-    potential = zeros(sizex, sizey, sizez, 4)
+    sx = range(start=0, stop=1, length=sizea)
+    sy = range(start=0, stop=1, length=sizeb)
+    sz = range(start=0, stop=1, length=sizec)
+    potential = zeros(sizea, sizeb, sizec, 4)
 
     for (i, fa) in tqdm(enumerate(sx)), (j, fb) in enumerate(sy), (k, fc) in enumerate(sz)
                 
@@ -442,7 +568,7 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
         if number_of_atoms_in_probe == 1
             rotation_trials = 1
         else
-            rotation_trials = 10
+            rotation_trials = 30
         end
 
         for _ in 1:1:rotation_trials
@@ -455,13 +581,13 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
 
             for framework_atom in framework.atoms, probe_atom in rotated_probe.atoms
             
-                sig1 = atom_prop[probe_atom.species].sigma
-                eps1 = atom_prop[probe_atom.species].epsilon
-                q1 = atom_prop[probe_atom.species].charge
+                sig1 = atom_properties[probe_atom.species].sigma
+                eps1 = atom_properties[probe_atom.species].epsilon
+                q1 = atom_properties[probe_atom.species].charge
         
-                sig2 = atom_prop[framework_atom.species].sigma
-                eps2 = atom_prop[framework_atom.species].epsilon
-                q2 = atom_prop[framework_atom.species].charge
+                sig2 = atom_properties[framework_atom.species].sigma
+                eps2 = atom_properties[framework_atom.species].epsilon
+                q2 = atom_properties[framework_atom.species].charge
             
                 # Lorentz-Berthelot mixing rules and charge product
                 sig = (sig1 + sig2) / 2
@@ -481,12 +607,12 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
                     r = sqrt((p_atom_x - f_atom_x)^2 + (p_atom_y - f_atom_y)^2 + 
                     (p_atom_z - f_atom_z)^2)
             
-                    if  0.5 * sig < r < cutoff
+                    if  0.5 * sig2 < r < cutoff
                         potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
                         potential[i, j, k, 4] += coloumb_energy(q, r)
-                    elseif r < 0.5 * sig
-                        potential[i, j, k, 4] = 0
-                        @goto finish_potenial_calculation
+                    elseif r < 0.5 * sig2
+                        potential[i, j, k, 4] = 1
+                        @goto skip_end_sequence
                     elseif r > cutoff
                         continue
                     end
@@ -496,25 +622,25 @@ function compute_potential_landscape(atom_prop::Dict{SubString{String}, AtomProp
 
         if potential[i, j, k, 4] > 0
             potential[i, j, k, 4] = 0
+        else
+            # Conversion from J to kJ/mol
+            potential[i, j, k, 4] *= NA * 1e-3 / rotation_trials
         end
         
-        @label finish_potenial_calculation
-
-        # Conversion from J to kJ/mol
-        potential[i, j, k, 4] *= NA * 1e-3 / rotation_trials
+        @label skip_end_sequence
     end
    
     if save == "yes"
         
         mkpath("Output")
         
-        num = Integer(sizex * sizey * sizez)
+        num = Integer(sizea * sizeb * sizec)
         x = zeros(num)
         y = zeros(num)
         z = zeros(num)
         pot = zeros(num)
-        for i in 1:1:sizex, j in 1:1:sizey, k in 1:1:sizez
-            index = i + (j-1) * sizex + (k-1) * sizey^2
+        for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
+            index = i + (j-1) * sizea + (k-1) * sizeb^2
             x[index] = potential[i, j, k, 1]
             y[index] = potential[i, j, k, 2]
             z[index] = potential[i, j, k, 3]
@@ -533,61 +659,71 @@ end
 
 
 """
-    compute_potential(atom_prop::Dict{SubString{String}, AtomProperties}, 
-    frame_prop::FrameworkProperties, framework::Vector{Atom}, probe::SubString{String}, 
-    size::Integer)
+    compute_characteristic(atom_properties::Dict{SubString{String}, AtomProperties}, 
+    framework::Framework, potential::Array{Float64, 4}, sizea::Integer, sizeb::Integer,
+    sizec::Integer, npoints::Integer, save::SubString{String})
 
-Compute the potential 
+Compute the characteristic curve from the potential landscape.
+
+Create a range between the minimum potential value recorded and 0 containing `npoints`.
+For each energy value in the range, count the number of boxes that have a lower 
+potential energy value. Multiply the number of boxes by the volume of a box to obtain
+the total volume enclosed by each equipotential line.
 
 # Arguments
-- `atom_prop::Dict{SubString{String}, AtomProperties}`: 
-- `frame_prop::FrameworkProperties`:
-- `framework::Vector{Atom}`:
-- `potential::Array{Flat64, 4}`:
-- `size::Integer`: 
-
+- `atom_properties::Dict{SubString{String}, AtomProperties}`: the dictionary containing
+the properties of each atomic species.
+- `framework::Framework`: the data structure containing the framework unit cell 
+parameters and the constituting atoms.
+- `potential::Array{Float64, 4}`: the 4-dimensional array containing the value of the
+potential at different points in the framework.
+- `sizea::Integer`: the number of units in which the a lattice vector is divided. 
+- `sizeb::Integer`: the number of units in which the b lattice vector is divided.
+- `sizec::Integer`: the number of units in which the c lattice vector is divided.
+- `npoints::Integer`: the number of points used for the characteristic curve.
+- `save::SubString{String}`: "yes" if the characteristic curve should be plotted and
+saved.
 """
-function compute_characteristic(atom_prop::Dict{SubString{String}, AtomProperties}, 
-    framework::Framework, potential::Array{Float64, 4}, sizex::Integer, sizey::Integer,
-    sizez::Integer, npoints::Integer, save::SubString{String}) 
+function compute_characteristic(atom_properties::Dict{SubString{String}, AtomProperties}, 
+    framework::Framework, potential::Array{Float64, 4}, sizea::Integer, sizeb::Integer,
+    sizec::Integer, npoints::Integer, save::SubString{String}) 
 
-    framework_mass = compute_framework_mass(atom_prop, framework)
+    framework_mass = compute_framework_mass(atom_properties, framework)
     framework_volume = compute_framework_volume(framework)
 
     # Compute the volume of a sample point in ml
-    sample_volume = framework_volume * 1e-24 / sizex / sizey / sizez
+    sample_volume = framework_volume * 1e-24 / sizea / sizeb / sizec
     
     minimum_potential = minimum(potential)
-    potential_range = range(start=minimum_potential, stop=-0.000001, length=npoints)
+    potential_range = range(start=minimum_potential, stop=0.0, length=npoints)
     
-    if save == "yes"
-        mkpath("Output")
+    mkpath("Output")
+    output_file = open("Output/characteristic.dat", "w+")
+    write(output_file, "# Potential [kJ/mol] \t Volume [ml/g] \n")
 
-        output_file = open("Output/characteristic.dat", "w+")
-        write(output_file, "# Potential [kJ/mol] \t Volume [ml/g] \n")
-
-        measured_potential = zeros(npoints)
-        measured_volumes = zeros(npoints)
-        for (index, ads_potential) in enumerate(potential_range)
-            counter = 0
-            for i in 1:1:sizex, j in 1:1:sizey, k in 1:1:sizez
-                if potential[i, j, k, 4] <= ads_potential
-                    counter += 1
-                end
+    measured_potential = zeros(npoints)
+    measured_volumes = zeros(npoints)
+    for (index, ads_potential) in enumerate(potential_range)
+        counter = 0
+        for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
+            if potential[i, j, k, 4] <= ads_potential
+                counter += 1
             end
-
-            # Store the volume in ml/g
-            volume = counter * sample_volume / framework_mass / 1000
-            measured_volumes[index] = volume
-
-            # Store the positive value of potential in kJ/mol
-            measured_potential[index] = -ads_potential
-
-            write(output_file, "$(-ads_potential) \t $volume \n") 
         end
 
-        close(output_file)
+        # Store the volume in ml/g
+        volume = counter * sample_volume / framework_mass / 1000
+        measured_volumes[index] = volume
 
+        # Store the positive value of potential in kJ/mol
+        measured_potential[index] = -ads_potential
+
+        write(output_file, "$(-ads_potential) \t $volume \n") 
+    end
+
+    close(output_file)
+    
+    if save == "yes"
         characteristic_plot = plot(measured_potential, measured_volumes)
         xlabel!(characteristic_plot, "Potential [kJ/mol]")
         ylabel!(characteristic_plot, "Volume [ml/g]")

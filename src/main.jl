@@ -3,7 +3,7 @@ include("interpreter.jl")
 
 function main()
     output_file = open("escape.out", "w+")
-    input_data = read_input_file_beta("config.in")
+    input_data = read_input_file("config.in")
     probe = read_probe_file(input_data["PROBE"])
     framework = read_framework_file(input_data["FRAMEWORK"])
     properties = read_properties_file(input_data["PROPERTIES"])
