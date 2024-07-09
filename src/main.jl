@@ -168,9 +168,10 @@ function main()
     sizey = parse(Int64, input_data["YPOINTS"])
     sizez = parse(Int64, input_data["ZPOINTS"])
     cutoff = parse(Float64, input_data["CUTOFF"])
+    rotations = parse(Int64, input_data["ROTATIONS"])
 
     potential = compute_potential_landscape(properties, framework, probe, sizex, sizey,
-    sizez, cutoff, input_data["SAVE_POTENTIAL"])
+    sizez, cutoff, rotations, output_file, input_data["SAVE_POTENTIAL"])
 
     npoints = parse(Int64, input_data["CHARACTERISTIC_POINTS"])
     compute_characteristic(properties, framework, potential, sizex, sizey, sizez, 
