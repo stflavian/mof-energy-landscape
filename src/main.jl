@@ -18,7 +18,7 @@ function main()
         write(output_file, "$key_string $argument_string\n")
     end
     write(output_file, "\n")
-
+    flush(output_file)
     
     message = rpad("---- Atomic properties ", 81, "-")
     write(output_file, "$message\n")
@@ -41,6 +41,7 @@ function main()
         write(output_file, "$species_string $sigma_string $epsilon_string $charge_string $mass_string\n")
     end
     write(output_file, "\n")
+    flush(output_file)
 
 
     message = rpad("---- Unitcell geometry ", 81, "-")
@@ -70,6 +71,7 @@ function main()
     argument_string = lpad(framework.gamma, 40, " ")
     write(output_file, "$key_string $argument_string\n")
     write(output_file, "\n")
+    flush(output_file)
 
 
     message = rpad("---- Framework atoms ", 81, "-")
@@ -93,6 +95,7 @@ function main()
         write(output_file, "$index_string $species_string $x_string $y_string $z_string\n")
     end
     write(output_file, "\n")
+    flush(output_file)
     
 
     message = rpad("---- Framework properties ", 81, "-")
@@ -118,6 +121,7 @@ function main()
     argument_string = lpad(framework_density, 40, " ")
     write(output_file, "$key_string $argument_string\n")
     write(output_file, "\n")
+    flush(output_file)
 
     
     message = rpad("---- Probe atoms ", 81, "-")
@@ -141,6 +145,7 @@ function main()
         write(output_file, "$index_string $species_string $x_string $y_string $z_string\n")
     end
     write(output_file, "\n")
+    flush(output_file)
 
 
     message = rpad("---- Probe properties ", 81, "-")
@@ -163,6 +168,7 @@ function main()
     argument_string3 = lpad(center_of_mass[3], 14, " ")
     write(output_file, "$key_string $argument_string1 $argument_string2 $argument_string3\n")
     write(output_file, "\n")
+    flush(output_file)
 
     sizex = parse(Int64, input_data["XPOINTS"])
     sizey = parse(Int64, input_data["YPOINTS"])

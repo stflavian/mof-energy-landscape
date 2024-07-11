@@ -610,7 +610,8 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
             write(output_file, "$index_string $species_string $x_string $y_string $z_string\n")
         end
         write(output_file, "\n")
-        
+        flush(output_file)
+
         for (i, fa) in enumerate(sx), (j, fb) in enumerate(sy), (k, fc) in enumerate(sz)
 
             coordinates = A * [fa, fb, fc]
@@ -635,7 +636,7 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
                 cmr = sqrt((x - framework_atom.x)^2 + (y - framework_atom.y)^2 + 
                 (z - framework_atom.z)^2)
 
-                if cmr < 0.5 * sig2
+                if cmr < 0.5 * sig2 
                     potential[i, j, k, 4] = 1
                     @goto next_point
                 end
@@ -716,11 +717,11 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     write(output_file, "$key_string $argument_string\n")
     
     key_string = rpad("Negative potential box ratio [-]", 40, " ")
-    argument_string = lpad(positive_potential_boxes/total_boxes, 40, " ")
+    argument_string = lpad(negative_potential_boxes/total_boxes, 40, " ")
     write(output_file, "$key_string $argument_string\n")
     
     key_string = rpad("Positive potential box ratio [-]", 40, " ")
-    argument_string = lpad(negative_potential_boxes/total_boxes, 40, " ")
+    argument_string = lpad(positive_potential_boxes/total_boxes, 40, " ")
     write(output_file, "$key_string $argument_string\n")
     
     key_string = rpad("Average potential [kJ/mol]", 40, " ")
@@ -737,6 +738,7 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     write(output_file, "$key_string $argument_string\n")
     
     write(output_file, "\n")
+    flush(output_file)
 
     if save == "yes"
         
@@ -803,7 +805,7 @@ function compute_characteristic(atom_properties::Dict{SubString{String}, AtomPro
     sample_volume = framework_volume * 1e-24 / sizea / sizeb / sizec
     
     minimum_potential = minimum(potential)
-    potential_range = range(start=minimum_potential, stop=0.0, length=npoints)
+    potential_range = range(start=minimum_potential, stop=-1e-7, length=npoints)
     
     mkpath("Output")
     output_file = open("Output/characteristic.dat", "w+")
