@@ -577,7 +577,8 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     sz = range(start=0, stop=1, length=sizec)
     potential = zeros(sizea, sizeb, sizec, 4)
     
-    for (index, _) in enumerate(1:1:rotations)
+    # Main loop
+    total_stats = @timed for (index, _) in enumerate(1:1:rotations)
 
         message = rpad("---- Run $index ", 81, "-")
         write(output_file, "$message\n")
@@ -612,7 +613,7 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
         write(output_file, "\n")
         flush(output_file)
 
-        for (i, fa) in enumerate(sx), (j, fb) in enumerate(sy), (k, fc) in enumerate(sz)
+        run_stats = @timed for (i, fa) in enumerate(sx), (j, fb) in enumerate(sy), (k, fc) in enumerate(sz)
 
             coordinates = A * [fa, fb, fc]
             x = coordinates[1]
@@ -668,12 +669,88 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
 
                 end
             end
-        @label next_point
+            @label next_point
         end
+        
+        message = rpad("---- Run results ", 81, "-")
+        write(output_file, "$message\n")
+
+        total_boxes = sizea * sizeb * sizec
+        inaccessible_boxes = 0
+
+        positive_potential_boxes = 0
+        total_positive_potential = 0
+
+        negative_potential_boxes = 0
+        total_negative_potential = 0
+
+        for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
+
+            if potential[i, j, k, 4] == 1
+                inaccessible_boxes += 1
+                continue
+            elseif potential[i, j, k, 4] > 0
+                positive_potential_boxes += 1
+                total_positive_potential += potential[i, j, k, 4] * NA * 1e-3 / index
+            else
+                negative_potential_boxes += 1
+                total_negative_potential += potential[i, j, k, 4] * NA * 1e-3 / index
+            end
+        end
+
+        key_string = rpad("Total boxes evaluated [count]", 40, " ")
+        argument_string = lpad(total_boxes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("Inaccessible box ratio [-]", 40, " ")
+        argument_string = lpad(inaccessible_boxes/total_boxes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("Negative potential box ratio [-]", 40, " ")
+        argument_string = lpad(negative_potential_boxes/total_boxes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("Positive potential box ratio [-]", 40, " ")
+        argument_string = lpad(positive_potential_boxes/total_boxes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("Average potential [kJ/mol]", 40, " ")
+        val = (total_positive_potential + total_negative_potential) / total_boxes 
+        argument_string = lpad(val, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("Average positive potential [kJ/mol]", 40, " ")
+        argument_string = lpad(total_positive_potential/positive_potential_boxes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("Average negative potential [kJ/mol]", 40, " ")
+        argument_string = lpad(total_negative_potential/negative_potential_boxes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        write(output_file, "\n")
+        flush(output_file)
+        
+
+        message = rpad("---- Run performance statistics ", 81, "-")
+        write(output_file, "$message\n")
+        
+        key_string = rpad("Time elapsed [s]", 40, " ")
+        argument_string = lpad(run_stats.time, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+
+        key_string = rpad("GC time elapsed [s]", 40, " ")
+        argument_string = lpad(run_stats.gctime, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+        
+        key_string = rpad("Memory allocated [bytes]", 40, " ")
+        argument_string = lpad(run_stats.bytes, 40, " ")
+        write(output_file, "$key_string $argument_string\n")
+        
+        write(output_file, "\n")
+        flush(output_file)
     end
     
-    # Check-up loop
-    message = rpad("---- Box counting statistics ", 81, "-")
+    message = rpad("---- Total results ", 81, "-")
     write(output_file, "$message\n")
     
     total_boxes = sizea * sizeb * sizec
@@ -737,6 +814,25 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     argument_string = lpad(total_negative_potential/negative_potential_boxes, 40, " ")
     write(output_file, "$key_string $argument_string\n")
     
+    write(output_file, "\n")
+    flush(output_file)
+        
+
+    message = rpad("---- Total performance statistics ", 81, "-")
+    write(output_file, "$message\n")
+        
+    key_string = rpad("Time elapsed [s]", 40, " ")
+    argument_string = lpad(total_stats.time, 40, " ")
+    write(output_file, "$key_string $argument_string\n")
+
+    key_string = rpad("GC time elapsed [s]", 40, " ")
+    argument_string = lpad(total_stats.gctime, 40, " ")
+    write(output_file, "$key_string $argument_string\n")
+        
+    key_string = rpad("Memory allocated [bytes]", 40, " ")
+    argument_string = lpad(total_stats.bytes, 40, " ")
+    write(output_file, "$key_string $argument_string\n")
+        
     write(output_file, "\n")
     flush(output_file)
 
