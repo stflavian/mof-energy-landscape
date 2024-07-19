@@ -9,10 +9,10 @@ include("constants.jl")
 Structure for storing the properties of an atomic species.
 """
 struct AtomProperties
-    epsilon::Real
-    sigma::Real
-    charge::Real
-    mass::Real
+    epsilon::Float64
+    sigma::Float64
+    charge::Float64
+    mass::Float64
 end
 
 
@@ -21,9 +21,9 @@ Structure for storing the species and Cartesian coordinates of atoms.
 """
 struct Atom
     species::String
-    x::Real
-    y::Real
-    z::Real
+    x::Float64
+    y::Float64
+    z::Float64
 end
 
 
@@ -31,12 +31,12 @@ end
 Structure for storing the framework unit cell parameters and position of atoms.
 """
 struct Framework
-    a::Real
-    b::Real
-    c::Real
-    alpha::Real
-    beta::Real
-    gamma::Real
+    a::Float64
+    b::Float64
+    c::Float64
+    alpha::Float64
+    beta::Float64
+    gamma::Float64
     atoms::Vector{Atom}
 end
 
@@ -233,7 +233,7 @@ Compute the 6-12 Lennard-Jones energy (J) between two particles, using the sigma
 particles' epsilon values.
 - `distance::Real`: the distance between the center of masses of the two particles.
 """
-function lennard_jones_energy(sigma::Real, epsilon::Real, distance::Real)
+function lennard_jones_energy(sigma::Float64, epsilon::Float64, distance::Float64)
     frac = sigma / distance    
     return 4 * epsilon * KB * (frac^12 - frac^6)
 end
@@ -249,7 +249,7 @@ charges (e-^2) and distance (angstrom).
 - `charge::Real`: the product of the charges of the two particles.
 - `distance::Real`: the distance between the center of masses of the two particles.
 """
-function coloumb_energy(charge::Real, distance::Real)
+function coloumb_energy(charge::Float64, distance::Float64)
     return Q^2 * charge * KE * 1e10 / distance
 end
 
@@ -371,7 +371,7 @@ origin.
 - `j::Real`: the j (y) component of the rotation axis.
 - `k::Real`: the k (z) component of the rotation axis.
 """
-function rotate_probe(probe::Probe, angle::Real, i::Real, j::Real, k::Real)
+function rotate_probe(probe::Probe, angle::Float64, i::Float64, j::Float64, k::Float64)
     
     rotated_probe = deepcopy(probe.atoms)
     rotation_vector = sin(angle/2) / sqrt(i^2 + j^2 + k^2) * [i; j; k]
@@ -484,8 +484,70 @@ Compute the density (kg/m3) of the framework.
 - `framework_mass::Real`: the total mass of the atoms inside the unit cell.
 - `framework_volume::Real`: the total volume of the unit cell.
 """
-function compute_framework_density(framework_mass::Real, framework_volume::Real)
+function compute_framework_density(framework_mass::Float64, framework_volume::Float64)
     return framework_mass * 1e30 / framework_volume
+end
+
+
+"""
+    fractional_to_cartesian(conversion_matrix::Matrix{Float64}, fa::Float64,
+    fb::Float64, fc::Float64)
+
+Convert fractional coordinates to cartesian coordinates using the framework's
+conversion matrix.
+
+# Arguments
+- `conversion_matrix::Matrix{Float64}`: the framework's conversion matrix. 
+- `fa::Float64`: fractional position on the a axis.
+- `fb::Float64`: fractional position on the b axis.
+- `fc::Float64`: fractional position on the c axis.
+"""
+function fractional_to_cartesian(conversion_matrix::Matrix{Float64}, fa::Float64, 
+    fb::Float64, fc::Float64)
+    
+    return conversion_matrix * [fa, fb, fc]
+end
+
+
+"""
+    compute_conversion_matrix(framework::Framework)
+
+Compute the conversion matrix of the framework.
+
+# Arguments
+- `framework::Framework`: structure containing the properties of the framework.
+"""
+function compute_conversion_matrix(framework::Framework)
+   
+    a = framework.a
+    b = framework.b
+    c = framework.c
+
+    alpha = framework.alpha * pi / 180
+    beta = framework.beta * pi / 180
+    gamma = framework.gamma * pi / 180
+
+    alphastar = acos((cos(beta) * cos(gamma) - cos(alpha)) / sin(beta) / sin(gamma)) 
+    A = [a  b * cos(gamma)  c * cos(beta);
+        0  b * sin(gamma)  c * -1 * sin(beta) * cos(alphastar);
+        0  0  c * sin(beta) * sin(alphastar)]
+    
+    return A
+end
+
+
+"""
+    compute_distance(dx::Float64, dy::Float64, dz::Float64)
+
+Compute the distance between two points given the difference in positions. 
+
+# Arguments
+- `dx::Float64`: position difference on the x axis.
+- `dy::Float64`: position difference on the y axis.
+- `dz::Float64`: position difference on the z axis.
+"""
+function compute_distance(dx::Float64, dy::Float64, dz::Float64)
+    return sqrt(dx^2 + dy^2 + dz^2)
 end
 
 
@@ -525,26 +587,14 @@ parameters and the constituting atoms.
 saved.
 """
 function compute_potential_landscape(atom_properties::Dict{SubString{String}, AtomProperties}, 
-    framework::Framework, probe::Probe, sizea::Integer, sizeb::Integer, sizec::Integer,
-    cutoff::Real, rotations::Integer, output_file::IO, save::SubString{String})
+    framework::Framework, probe::Probe, sizea::Int64, sizeb::Int64, sizec::Int64,
+    cutoff::Float64, rotations::Int64, output_file::IO, save::SubString{String})
     
     message = rpad("==== Energy landscape calculations ", 81, "=")
     write(output_file, "$message\n")
     write(output_file, "\n")
-    
-    # Compute the transformation matrix for fractional to Cartesian coordinates
-    a = framework.a
-    b = framework.b
-    c = framework.c
 
-    alpha = framework.alpha * pi / 180
-    beta = framework.beta * pi / 180
-    gamma = framework.gamma * pi / 180
-
-    alphastar = acos((cos(beta) * cos(gamma) - cos(alpha)) / sin(beta) / sin(gamma)) 
-    A = [a  b * cos(gamma)  c * cos(beta);
-        0  b * sin(gamma)  c * -1 * sin(beta) * cos(alphastar);
-        0  0  c * sin(beta) * sin(alphastar)]
+    A = compute_conversion_matrix(framework)
    
     # Compute the offset displacements needed for periodic boundary conditions
     message = rpad("---- Neighbouring unit cells ", 81, "-")
@@ -614,59 +664,62 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
         flush(output_file)
 
         run_stats = @timed for (i, fa) in enumerate(sx), (j, fb) in enumerate(sy), (k, fc) in enumerate(sz)
-
-            coordinates = A * [fa, fb, fc]
-            x = coordinates[1]
-            y = coordinates[2]
-            z = coordinates[3]
-
+            
+            # Convert fractional coordinates to Cartesian coordinates
+            x, y, z = fractional_to_cartesian(A, fa, fb, fc)
             potential[i, j, k, 1] = x
             potential[i, j, k, 2] = y
             potential[i, j, k, 3] = z
 
-            for framework_atom in framework.atoms, probe_atom in rotated_probe.atoms
+            for framework_atom in framework.atoms
                 
-                sig1 = atom_properties[probe_atom.species].sigma
-                eps1 = atom_properties[probe_atom.species].epsilon
-                q1 = atom_properties[probe_atom.species].charge
-
+                # Store framework atom properties
                 sig2 = atom_properties[framework_atom.species].sigma
                 eps2 = atom_properties[framework_atom.species].epsilon
                 q2 = atom_properties[framework_atom.species].charge
                 
-                cmr = sqrt((x - framework_atom.x)^2 + (y - framework_atom.y)^2 + 
-                (z - framework_atom.z)^2)
-
+                # Compute distance between probe center of mass and framework atom
+                dx = x - framework_atom.x
+                dy = y - framework_atom.y
+                dz = z - framework_atom.z
+                cmr = compute_distance(dx, dy, dz)
+                
+                # Check if the probe center of mass falls within the atomic radius
+                # of a framework atom 
                 if cmr < 0.5 * sig2 
                     potential[i, j, k, 4] = 1
                     @goto next_point
                 end
-
-                # Lorentz-Berthelot mixing rules and charge product
-                sig = (sig1 + sig2) / 2
-                eps = sqrt(eps1 * eps2)
-                q = q1 * q2 
-
-                for offset in pbc_offsets
-
-                    f_atom_x = framework_atom.x + offset[1]
-                    f_atom_y = framework_atom.y + offset[2]
-                    f_atom_z = framework_atom.z + offset[3]
-
-                    p_atom_x = probe_atom.x + x
-                    p_atom_y = probe_atom.y + y
-                    p_atom_z = probe_atom.z + z
+                
+                for probe_atom in rotated_probe.atoms
                     
-                    r = sqrt((p_atom_x - f_atom_x)^2 + (p_atom_y - f_atom_y)^2 + 
-                    (p_atom_z - f_atom_z)^2)
+                    # Store probe atom properties
+                    sig1 = atom_properties[probe_atom.species].sigma
+                    eps1 = atom_properties[probe_atom.species].epsilon
+                    q1 = atom_properties[probe_atom.species].charge
+                    
+                    # Lorentz-Berthelot mixing rules and charge product
+                    sig = (sig1 + sig2) * 0.5
+                    eps = sqrt(eps1 * eps2)
+                    q = q1 * q2 
 
-                    if r < cutoff
-                        potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
-                        potential[i, j, k, 4] += coloumb_energy(q, r)
-                    elseif r > cutoff
-                        continue
+                    for offset in pbc_offsets
+                        
+                        # Compute distance between probe atom and framework atom
+                        dx = probe_atom.x + x - framework_atom.x - offset[1]
+                        dy = probe_atom.y + y - framework_atom.y - offset[2]
+                        dz = probe_atom.z + z - framework_atom.z - offset[3]
+                        r = compute_distance(dx, dy, dz)
+                        
+                        # Check if distance is longer than cutoff
+                        if r < cutoff
+                            potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
+                            potential[i, j, k, 4] += coloumb_energy(q, r)
+                        elseif r > cutoff
+                            continue
+                        end
+
                     end
-
                 end
             end
             @label next_point
@@ -840,7 +893,7 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
         
         mkpath("Output")
         
-        num = Integer(sizea * sizeb * sizec)
+        num = sizea * sizeb * sizec
         x = zeros(num)
         y = zeros(num)
         z = zeros(num)
@@ -891,8 +944,8 @@ potential at different points in the framework.
 saved.
 """
 function compute_characteristic(atom_properties::Dict{SubString{String}, AtomProperties}, 
-    framework::Framework, potential::Array{Float64, 4}, sizea::Integer, sizeb::Integer,
-    sizec::Integer, npoints::Integer, save::SubString{String}) 
+    framework::Framework, potential::Array{Float64, 4}, sizea::Int64, sizeb::Int64,
+    sizec::Int64, npoints::Int64, save::SubString{String}) 
 
     framework_mass = compute_framework_mass(atom_properties, framework)
     framework_volume = compute_framework_volume(framework)
