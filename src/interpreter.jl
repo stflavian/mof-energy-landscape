@@ -676,7 +676,7 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
                 # Store framework atom properties
                 sig2 = atom_properties[framework_atom.species].sigma
                 eps2 = atom_properties[framework_atom.species].epsilon
-                q2 = atom_properties[framework_atom.species].charge
+                #q2 = atom_properties[framework_atom.species].charge
                 
                 # Compute distance between probe center of mass and framework atom
                 dx = x - framework_atom.x
@@ -696,12 +696,12 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
                     # Store probe atom properties
                     sig1 = atom_properties[probe_atom.species].sigma
                     eps1 = atom_properties[probe_atom.species].epsilon
-                    q1 = atom_properties[probe_atom.species].charge
+                    #q1 = atom_properties[probe_atom.species].charge
                     
                     # Lorentz-Berthelot mixing rules and charge product
                     sig = (sig1 + sig2) * 0.5
                     eps = sqrt(eps1 * eps2)
-                    q = q1 * q2 
+                    #q = q1 * q2 
 
                     for offset in pbc_offsets
                         
@@ -714,7 +714,8 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
                         # Check if distance is longer than cutoff
                         if r < cutoff
                             potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
-                            potential[i, j, k, 4] += coloumb_energy(q, r)
+                            potential[i, j, k, 4] -= lennard_jones_energy(sig, eps, cutoff)
+                            #potential[i, j, k, 4] += coloumb_energy(q, r)
                         elseif r > cutoff
                             continue
                         end
@@ -900,17 +901,15 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
         pot = zeros(num)
         for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
             index = i + (j-1) * sizea + (k-1) * sizeb^2
-            x[index] = potential[i, j, k, 1]
-            y[index] = potential[i, j, k, 2]
-            z[index] = potential[i, j, k, 3]
-            pot[index] = potential[i, j, k, 4]
+            x[index] = potential[i, j, 1, 1]
+            y[index] = potential[i, j, 1, 2]
+            z[index] = potential[i, j, 1, 3]
+            pot[index] = potential[i, j, 1, 4]
         end
 
-        p = scatter(x, y, z, marker_z=pot, aspect_ratio=:equal, markersize=2, camera=(0, -90))
-        xlabel!(p, "X [\$\\AA\$]")
-        ylabel!(p, "Y [\$\\AA\$]")
-        zlabel!(p, "Z [\$\\AA\$]")
-    
+        p = scatter(x, y, marker_z=pot, markersize=2, camera=(0, -90),
+        showaxis=false, legend=false, colorbar=true, markerstrokewidth=0, 
+        right_margin=12Plots.mm)
         savefig(p, "Output/potential_landscape.png")
     end
     return potential
