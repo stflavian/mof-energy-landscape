@@ -622,9 +622,9 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     write(output_file, "\n")
     
     # Initialize arrays and assign parameters for probe
-    sx = range(start=0, stop=1, length=sizea)
-    sy = range(start=0, stop=1, length=sizeb)
-    sz = range(start=0, stop=1, length=sizec)
+    sx = range(start=0, step=1/sizea, length=sizea) .+ 1/(sizea * 2)
+    sy = range(start=0, step=1/sizeb, length=sizeb) .+ 1/(sizeb * 2)
+    sz = range(start=0, step=1/sizeb, length=sizec) .+ 1/(sizec * 2)
     potential = zeros(sizea, sizeb, sizec, 4)
     
     # Main loop
