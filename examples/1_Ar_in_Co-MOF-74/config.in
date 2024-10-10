@@ -1,0 +1,11 @@
+FRAMEWORK       Co-MOF-74.xyz
+PROBE           Ar.xyz
+PROPERTIES      atomic_properties.dat
+CUTOFF          12
+XPOINTS         60
+YPOINTS         60
+ZPOINTS         30
+ROTATIONS       1
+CHARACTERISTIC_POINTS   20
+SAVE_CHARACTERISTIC     yes
+SAVE_POTENTIAL          yes
