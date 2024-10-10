@@ -418,7 +418,7 @@ Box [i, j, k]                  X [angstrom]     Y [angstrom]     Z [angstrom]
 
 ---- Rotated probe --------------------------------------------------------------
 Index      Species             X [angstrom]     Y [angstrom]     Z [angstrom]    
-1          Ar                  -0.0             0.0              0.0             
+1          Ar                  -0.0             -0.0             -0.0            
 
 ---- Run results ----------------------------------------------------------------
 Total boxes evaluated [count]                                              108000
@@ -430,9 +430,9 @@ Average positive potential [kJ/mol]                           9.766301621211184e
 Average negative potential [kJ/mol]                            -5.647209719167704
 
 ---- Run performance statistics -------------------------------------------------
-Time elapsed [s]                                                     87.075684505
-GC time elapsed [s]                                                   0.483745232
-Memory allocated [bytes]                                             101587956656
+Time elapsed [s]                                                     98.266806424
+GC time elapsed [s]                                                   4.468344841
+Memory allocated [bytes]                                             101587959376
 
 ---- Total results --------------------------------------------------------------
 Total boxes evaluated [count]                                              108000
@@ -444,7 +444,7 @@ Average positive potential [kJ/mol]                           9.766301621211184e
 Average negative potential [kJ/mol]                            -5.647209719167705
 
 ---- Total performance statistics -----------------------------------------------
-Time elapsed [s]                                                      87.07618873
-GC time elapsed [s]                                                   0.483745232
-Memory allocated [bytes]                                             101587968392
+Time elapsed [s]                                                     98.269597932
+GC time elapsed [s]                                                   4.468344841
+Memory allocated [bytes]                                             101587971112
 

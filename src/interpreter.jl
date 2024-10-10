@@ -1,3 +1,7 @@
+# TODO: The functions are too big and are very messy. They should be split into smaller
+# functions. The print statements should also be removed or contained, since now it makes
+# reading very difficult.
+
 using Plots
 
 include("constants.jl")
@@ -88,7 +92,7 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
         message = rpad("---- Run $index ", 81, "-")
         write(output_file, "$message\n")
         write(output_file, "\n")
-        
+       
         angle = rand() * 2 * pi
         axis_i = 1 - 2 * rand()
         axis_j = 1 - 2 * rand()
