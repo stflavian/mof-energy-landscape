@@ -31,3 +31,18 @@ charges (e-^2) and distance (angstrom).
 function coloumb_energy(charge::Float64, distance::Float64)
     return Q^2 * charge * KE * 1e10 / distance
 end
+
+
+"""
+    compute_distance(dx::Float64, dy::Float64, dz::Float64)
+
+Compute the distance between two points given the difference in positions. 
+
+# Arguments
+- `dx::Float64`: position difference on the x axis.
+- `dy::Float64`: position difference on the y axis.
+- `dz::Float64`: position difference on the z axis.
+"""
+function compute_distance(dx::Float64, dy::Float64, dz::Float64)
+    return sqrt(dx^2 + dy^2 + dz^2)
+end
