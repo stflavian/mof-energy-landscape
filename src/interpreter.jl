@@ -8,7 +8,7 @@ include("constants.jl")
 include("force_fields.jl")
 include("probe.jl")
 include("framework.jl")
-
+include("writer.jl")
 
 """
     compute_potential_landscape(atom_properties::Dict{SubString{String}, AtomProperties}, 
@@ -49,21 +49,19 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     framework::Framework, probe::Probe, sizea::Int64, sizeb::Int64, sizec::Int64,
     cutoff::Float64, rotations::Int64, output_file::IO, save::SubString{String})
     
-    message = rpad("==== Energy landscape calculations ", 81, "=")
-    write(output_file, "$message\n")
-    write(output_file, "\n")
-
+    write_section(output_file, "Energy landscape calculations")
     A = compute_conversion_matrix(framework)
    
     # Compute the offset displacements needed for periodic boundary conditions
-    message = rpad("---- Neighbouring unit cells ", 81, "-")
-    write(output_file, "$message\n")
+    write_subsection(output_file, "Periodic boundary conditions")
     
     box_string = rpad("Box [i, j, k]", 30, " ")
     x_string = rpad("X [angstrom]", 16, " ")
     y_string = rpad("Y [angstrom]", 16, " ")
     z_string = rpad("Z [angstrom]", 16, " ")
-
+    
+    pbc_framework = generate_pbc(framework)
+    
     write(output_file, "$box_string $x_string $y_string $z_string\n")
     pbc_offsets = []
     for i in [-1, 0, 1], j in [-1, 0, 1], k in [-1, 0, 1]
@@ -84,69 +82,40 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
     sx = range(start=0, step=1/sizea, length=sizea) .+ 1/(sizea * 2)
     sy = range(start=0, step=1/sizeb, length=sizeb) .+ 1/(sizeb * 2)
     sz = range(start=0, step=1/sizeb, length=sizec) .+ 1/(sizec * 2)
-    potential = zeros(sizea, sizeb, sizec, 4)
-    
+    potential = zeros(sizea, sizeb, sizec)
+     
     # Main loop
     total_stats = @timed for (index, _) in enumerate(1:1:rotations)
-
-        message = rpad("---- Run $index ", 81, "-")
-        write(output_file, "$message\n")
-        write(output_file, "\n")
+        
+        write_subsection(output_file, "Run $index")
        
         angle = rand() * 2 * pi
         axis_i = 1 - 2 * rand()
         axis_j = 1 - 2 * rand()
         axis_k = 1 - 2 * rand()
         rotated_probe = rotate_probe(probe, angle, axis_i, axis_j, axis_k)
-    
-        message = rpad("---- Rotated probe ", 81, "-")
-        write(output_file, "$message\n")
+        
+        write_subsection(output_file, "Rotated probe")
+        write_xyz(output_file, rotated_probe.atoms)
 
-        index_string = rpad("Index", 10, " ")
-        species_string = rpad("Species", 19, " ")
-        x_string = rpad("X [angstrom]", 16, " ")
-        y_string = rpad("Y [angstrom]", 16, " ")
-        z_string = rpad("Z [angstrom]", 16, " ")
-
-        write(output_file, "$index_string $species_string $x_string $y_string $z_string\n")
-        for (index, atom) in enumerate(rotated_probe.atoms)
-
-            index_string = rpad(index, 10, " ")
-            species_string = rpad(atom.species, 19, " ")
-            x_string = rpad(atom.x, 16, " ")
-            y_string = rpad(atom.y, 16, " ")
-            z_string = rpad(atom.z, 16, " ")
-
-            write(output_file, "$index_string $species_string $x_string $y_string $z_string\n")
-        end
-        write(output_file, "\n")
-        flush(output_file)
-
-        run_stats = @timed for (i, fa) in enumerate(sx), (j, fb) in enumerate(sy), (k, fc) in enumerate(sz)
+        run_stats = @timed for pos in eachindex(IndexCartesian(), potential)
             
             # Convert fractional coordinates to Cartesian coordinates
-            x, y, z = fractional_to_cartesian(A, fa, fb, fc)
-            potential[i, j, k, 1] = x
-            potential[i, j, k, 2] = y
-            potential[i, j, k, 3] = z
+            x, y, z = fractional_to_cartesian(A, sx[pos[1]], sy[pos[2]], sz[pos[3]])
 
-            for framework_atom in framework.atoms
+            for pbc_atom in pbc_framework.atoms
                 
                 # Store framework atom properties
-                sig2 = atom_properties[framework_atom.species].sigma
-                eps2 = atom_properties[framework_atom.species].epsilon
-                #q2 = atom_properties[framework_atom.species].charge
+                sig2 = atom_properties[pbc_atom.species].sigma
+                eps2 = atom_properties[pbc_atom.species].epsilon
                 
                 # Compute distance between probe center of mass and framework atom
-                dx = x - framework_atom.x
-                dy = y - framework_atom.y
-                dz = z - framework_atom.z
-                cmr = compute_distance(dx, dy, dz)
+                cmr = compute_distance(x - pbc_atom.x, y - pbc_atom.y, z - pbc_atom.z)
                 
                 # Check if the probe center of mass falls within the atomic radius
                 # of a framework atom 
-                if cmr < 0.5 * sig2 
-                    potential[i, j, k, 4] = 1
+                if cmr <= 0.5 * sig2 
+                    @inbounds potential[pos] = 1.0
                     @goto next_point
                 end
                 
@@ -155,222 +124,104 @@ function compute_potential_landscape(atom_properties::Dict{SubString{String}, At
                     # Store probe atom properties
                     sig1 = atom_properties[probe_atom.species].sigma
                     eps1 = atom_properties[probe_atom.species].epsilon
-                    #q1 = atom_properties[probe_atom.species].charge
                     
                     # Lorentz-Berthelot mixing rules and charge product
                     sig = (sig1 + sig2) * 0.5
                     eps = sqrt(eps1 * eps2)
-                    #q = q1 * q2 
 
-                    for offset in pbc_offsets
-                        
-                        # Compute distance between probe atom and framework atom
-                        dx = probe_atom.x + x - framework_atom.x - offset[1]
-                        dy = probe_atom.y + y - framework_atom.y - offset[2]
-                        dz = probe_atom.z + z - framework_atom.z - offset[3]
-                        r = compute_distance(dx, dy, dz)
-                        
-                        # Check if distance is longer than cutoff
-                        if r < cutoff
-                            potential[i, j, k, 4] += lennard_jones_energy(sig, eps, r)
-                            potential[i, j, k, 4] -= lennard_jones_energy(sig, eps, cutoff)
-                            #potential[i, j, k, 4] += coloumb_energy(q, r)
-                        elseif r > cutoff
-                            continue
-                        end
-
+                    # Compute distance between probe atom and framework atom
+                    dx = probe_atom.x + x - pbc_atom.x
+                    dy = probe_atom.y + y - pbc_atom.y
+                    dz = probe_atom.z + z - pbc_atom.z
+                    r = compute_distance(dx, dy, dz)
+                    
+                    # Check if distance is longer than cutoff
+                    if r >= cutoff
+                        continue
+                    elseif r < cutoff
+                        @inbounds potential[pos] += lennard_jones_energy(sig, eps, r) -
+                                                 lennard_jones_energy(sig, eps, cutoff)
                     end
                 end
             end
             @label next_point
         end
         
-        message = rpad("---- Run results ", 81, "-")
-        write(output_file, "$message\n")
+        write_subsection(output_file, "Run results")
 
         total_boxes = sizea * sizeb * sizec
-        inaccessible_boxes = 0
-
-        positive_potential_boxes = 0
-        total_positive_potential = 0
-
-        negative_potential_boxes = 0
-        total_negative_potential = 0
-
-        for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
-
-            if potential[i, j, k, 4] == 1
-                inaccessible_boxes += 1
-                continue
-            elseif potential[i, j, k, 4] > 0
-                positive_potential_boxes += 1
-                total_positive_potential += potential[i, j, k, 4] * NA * 1e-3 / index
-            else
-                negative_potential_boxes += 1
-                total_negative_potential += potential[i, j, k, 4] * NA * 1e-3 / index
-            end
-        end
-
-        key_string = rpad("Total boxes evaluated [count]", 40, " ")
-        argument_string = lpad(total_boxes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        key_string = rpad("Inaccessible box ratio [-]", 40, " ")
-        argument_string = lpad(inaccessible_boxes/total_boxes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        key_string = rpad("Negative potential box ratio [-]", 40, " ")
-        argument_string = lpad(negative_potential_boxes/total_boxes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        key_string = rpad("Positive potential box ratio [-]", 40, " ")
-        argument_string = lpad(positive_potential_boxes/total_boxes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        key_string = rpad("Average potential [kJ/mol]", 40, " ")
-        val = (total_positive_potential + total_negative_potential) / total_boxes 
-        argument_string = lpad(val, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        key_string = rpad("Average positive potential [kJ/mol]", 40, " ")
-        argument_string = lpad(total_positive_potential/positive_potential_boxes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        key_string = rpad("Average negative potential [kJ/mol]", 40, " ")
-        argument_string = lpad(total_negative_potential/negative_potential_boxes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-
-        write(output_file, "\n")
-        flush(output_file)
+        inaccessible_boxes = length(potential[potential .== 1])
         
+        positive_boxes = length(potential[potential .> 0])
+        total_pos_pot = sum(potential[potential .> 0]) * NA * 1e-3 / index
 
-        message = rpad("---- Run performance statistics ", 81, "-")
-        write(output_file, "$message\n")
+        negative_boxes = length(potential[potential .< 0])
+        total_neg_pot = sum(potential[potential .< 0]) * NA * 1e-3 / index
         
-        key_string = rpad("Time elapsed [s]", 40, " ")
-        argument_string = lpad(run_stats.time, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
+        write_result(output_file, "Total boxes evaluated [count]", total_boxes)
+        write_result(output_file, "Inaccessible box ratio [-]", inaccessible_boxes/total_boxes)
+        write_result(output_file, "Negative potential box ratio [-]", negative_boxes/total_boxes)
+        write_result(output_file, "Positive potential box ratio [-]", positive_boxes/total_boxes)
+        write_result(output_file, "Average potential [kJ/mol]", (total_pos_pot + total_neg_pot) / total_boxes)
+        write_result(output_file, "Average positive potential [kJ/mol]", total_pos_pot/positive_boxes)
+        write_result(output_file, "Average negative potential [kJ/mol]", total_neg_pot/negative_boxes)
+        println(output_file, " ")
 
-        key_string = rpad("GC time elapsed [s]", 40, " ")
-        argument_string = lpad(run_stats.gctime, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-        
-        key_string = rpad("Memory allocated [bytes]", 40, " ")
-        argument_string = lpad(run_stats.bytes, 40, " ")
-        write(output_file, "$key_string $argument_string\n")
-        
-        write(output_file, "\n")
-        flush(output_file)
+        write_subsection(output_file, "Run performance statistics")
+        write_result(output_file, "Time elapsed [s]", run_stats.time) 
+        write_result(output_file, "GC time elapsed [s]", run_stats.gctime)
+        write_result(output_file, "Memory allocated [bytes]", run_stats.bytes)
+        println(output_file, " ")
     end
     
-    message = rpad("---- Total results ", 81, "-")
-    write(output_file, "$message\n")
+    write_section(output_file, "Total results")
     
     total_boxes = sizea * sizeb * sizec
-    inaccessible_boxes = 0
-    
-    positive_potential_boxes = 0
-    total_positive_potential = 0
-
-    negative_potential_boxes = 0
-    total_negative_potential = 0
-
-    for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
-
-        if potential[i, j, k, 4] == 1
-            inaccessible_boxes += 1
-            continue
-        elseif potential[i, j, k, 4] > 0
-            positive_potential_boxes += 1
-            
-            # Conversion from J to kJ/mol
-            potential[i, j, k, 4] *= NA * 1e-3 / rotations
-            total_positive_potential += potential[i, j, k, 4]
-            
-            # Set potential to 0 for plotting 
-            potential[i, j, k, 4] = 0
-        else
-            negative_potential_boxes += 1
-            
-            # Conversion from J to kJ/mol
-            potential[i, j, k, 4] *= NA * 1e-3 / rotations
-            total_negative_potential += potential[i, j, k, 4]
-        end
-    end
-    
-    key_string = rpad("Total boxes evaluated [count]", 40, " ")
-    argument_string = lpad(total_boxes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    key_string = rpad("Inaccessible box ratio [-]", 40, " ")
-    argument_string = lpad(inaccessible_boxes/total_boxes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    key_string = rpad("Negative potential box ratio [-]", 40, " ")
-    argument_string = lpad(negative_potential_boxes/total_boxes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    key_string = rpad("Positive potential box ratio [-]", 40, " ")
-    argument_string = lpad(positive_potential_boxes/total_boxes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    key_string = rpad("Average potential [kJ/mol]", 40, " ")
-    val = (total_positive_potential + total_negative_potential) / total_boxes 
-    argument_string = lpad(val, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    key_string = rpad("Average positive potential [kJ/mol]", 40, " ")
-    argument_string = lpad(total_positive_potential/positive_potential_boxes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    key_string = rpad("Average negative potential [kJ/mol]", 40, " ")
-    argument_string = lpad(total_negative_potential/negative_potential_boxes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-    
-    write(output_file, "\n")
-    flush(output_file)
+    inaccessible_boxes = length(potential[potential .== 1])
         
+    positive_boxes = length(potential[potential .> 0])
+    total_pos_pot = sum(potential[potential .> 0]) * NA * 1e-3 / rotations
 
-    message = rpad("---- Total performance statistics ", 81, "-")
-    write(output_file, "$message\n")
-        
-    key_string = rpad("Time elapsed [s]", 40, " ")
-    argument_string = lpad(total_stats.time, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
+    negative_boxes = length(potential[potential .< 0])
+    total_neg_pot = sum(potential[potential .< 0]) * NA * 1e-3 / rotations
+    
+    write_result(output_file, "Total boxes evaluated [count]", total_boxes)
+    write_result(output_file, "Inaccessible box ratio [-]", inaccessible_boxes/total_boxes)
+    write_result(output_file, "Negative potential box ratio [-]", negative_boxes/total_boxes)
+    write_result(output_file, "Positive potential box ratio [-]", positive_boxes/total_boxes)
+    write_result(output_file, "Average potential [kJ/mol]", (total_pos_pot + total_neg_pot) / total_boxes)
+    write_result(output_file, "Average positive potential [kJ/mol]", total_pos_pot/positive_boxes)
+    write_result(output_file, "Average negative potential [kJ/mol]", total_neg_pot/negative_boxes)
+    println(output_file, " ")
 
-    key_string = rpad("GC time elapsed [s]", 40, " ")
-    argument_string = lpad(total_stats.gctime, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-        
-    key_string = rpad("Memory allocated [bytes]", 40, " ")
-    argument_string = lpad(total_stats.bytes, 40, " ")
-    write(output_file, "$key_string $argument_string\n")
-        
-    write(output_file, "\n")
-    flush(output_file)
+    write_subsection(output_file, "Run performance statistics")
+    write_result(output_file, "Time elapsed [s]", total_stats.time) 
+    write_result(output_file, "GC time elapsed [s]", total_stats.gctime)
+    write_result(output_file, "Memory allocated [bytes]", total_stats.bytes)
+    println(output_file, " ")
+    
+    # if save == "yes"
+    #     
+    #     mkpath("Output")
+    #     
+    #     num = sizea * sizeb * sizec
+    #     x = zeros(num)
+    #     y = zeros(num)
+    #     z = zeros(num)
+    #     pot = zeros(num)
+    #     for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
+    #         index = i + (j-1) * sizea + (k-1) * sizeb^2
+    #         x[index] = potential[i, j, 1, 1]
+    #         y[index] = potential[i, j, 1, 2]
+    #         z[index] = potential[i, j, 1, 3]
+    #         pot[index] = potential[i, j, 1, 4]
+    #     end
 
-    if save == "yes"
-        
-        mkpath("Output")
-        
-        num = sizea * sizeb * sizec
-        x = zeros(num)
-        y = zeros(num)
-        z = zeros(num)
-        pot = zeros(num)
-        for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
-            index = i + (j-1) * sizea + (k-1) * sizeb^2
-            x[index] = potential[i, j, 1, 1]
-            y[index] = potential[i, j, 1, 2]
-            z[index] = potential[i, j, 1, 3]
-            pot[index] = potential[i, j, 1, 4]
-        end
-
-        p = scatter(x, y, marker_z=pot, markersize=2, camera=(0, -90),
-        showaxis=false, legend=false, colorbar=true, markerstrokewidth=0, 
-        right_margin=12Plots.mm)
-        savefig(p, "Output/potential_landscape.png")
-    end
+    #     p = scatter(x, y, marker_z=pot, markersize=2, camera=(0, -90),
+    #     showaxis=false, legend=false, colorbar=true, markerstrokewidth=0, 
+    #     right_margin=12Plots.mm)
+    #     savefig(p, "Output/potential_landscape.png")
+    # end
     return potential
 end
 
@@ -402,7 +253,7 @@ potential at different points in the framework.
 saved.
 """
 function compute_characteristic(atom_properties::Dict{SubString{String}, AtomProperties}, 
-    framework::Framework, potential::Array{Float64, 4}, sizea::Int64, sizeb::Int64,
+    framework::Framework, potential::Array{Float64, 3}, sizea::Int64, sizeb::Int64,
     sizec::Int64, npoints::Int64, save::SubString{String}) 
 
     framework_mass = compute_framework_mass(atom_properties, framework)
@@ -421,12 +272,8 @@ function compute_characteristic(atom_properties::Dict{SubString{String}, AtomPro
     measured_potential = zeros(npoints)
     measured_volumes = zeros(npoints)
     for (index, ads_potential) in enumerate(potential_range)
-        counter = 0
-        for i in 1:1:sizea, j in 1:1:sizeb, k in 1:1:sizec
-            if potential[i, j, k, 4] <= ads_potential
-                counter += 1
-            end
-        end
+        
+        counter = length(potential[potential .<= ads_potential])
 
         # Store the volume in ml/g
         volume = counter * sample_volume / framework_mass / 1000
@@ -435,7 +282,7 @@ function compute_characteristic(atom_properties::Dict{SubString{String}, AtomPro
         # Store the positive value of potential in kJ/mol
         measured_potential[index] = -ads_potential
 
-        write(output_file, "$(-ads_potential) \t $volume \n") 
+        println(output_file, -ads_potential, "\t", volume) 
     end
 
     close(output_file)
