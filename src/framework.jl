@@ -216,3 +216,23 @@ function compute_conversion_matrix(framework::Framework)
     
     return A
 end
+
+
+function generate_pbc(framework::Framework)
+    
+    number_of_atoms = length(framework.atoms)
+    pbc_atoms = Vector{Atom}(undef, 27 * number_of_atoms)
+    
+    A = compute_conversion_matrix(framework)
+    i = 1
+    for ox in [0, -1, 1], oy in [0, -1, 1], oz in [0, -1, 1] 
+        for atom in framework.atoms
+            x, y, z = fractional_to_cartesian(A, atom.x + ox, atom.y + oy, atom.z + oz)
+            pbc_atoms[i] = Atom(atom.species, x, y, z)
+            i += 1
+        end
+    end
+    
+    return Framework(framework.a * 3, framework.b * 3, framework.c * 3, 
+                     framework.alpha, framework.beta, framework.gamma, pbc_atoms)
+end
